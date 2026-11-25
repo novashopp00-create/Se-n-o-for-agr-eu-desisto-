@@ -1,0 +1,267 @@
+pcall(function() game.Players.LocalPlayer.Kick = function() end end)
+-- stopped menu (derived from quadrilha) — full feature set with black theme and icon updates
+
+-- ===========================
+-- Services & helpers
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+
+local drawingSupported, _ = pcall(function() return Drawing end)
+local function newDrawing(kind)
+    if not drawingSupported then return nil end
+    local ok, obj = pcall(function() return Drawing.new(kind) end)
+    if ok then return obj end
+    return nil
+end
+
+local isMobile = UserInputService.TouchEnabled
+local scaleMultiplier = isMobile and 0.8 or 1
+local fontSize = isMobile and 16 or 14
+
+-- ===========================
+-- THEME (RED EDITION)
+-- ===========================
+local COLOR_BG     = Color3.fromRGB(15, 0, 0)
+local COLOR_PANEL  = Color3.fromRGB(25, 5, 5)
+local COLOR_TAB    = Color3.fromRGB(45, 10, 10)
+local COLOR_ACCENT = Color3.fromRGB(220, 20, 20) -- Vermelho
+local COLOR_TEXT   = Color3.fromRGB(255, 255, 255)
+local COLOR_SUB    = Color3.fromRGB(180, 150, 150)
+
+local themeTargets = {}
+local function registerThemeTarget(inst, prop) table.insert(themeTargets, {inst = inst, prop = prop}) end
+
+-- ... (Funções de notify, FOV e Aimbot do seu código original continuam aqui, omitidas para focar no ESP)
+-- Assumindo que as variáveis aimbotEnabled, FOVRadius, etc., já estão declaradas no seu code...
+
+-- ===========================
+-- ESP VARIABLES (Skelly & Box)
+-- ===========================
+local espEnabled = true
+local ESPS = {}
+local espColor = COLOR_ACCENT
+
+local function ensureStorage(name) -- Seu código original
+    local g = Player.PlayerGui:FindFirstChild(name)
+    if not g then g = Instance.new("Folder"); g.Name = name; g.Parent = Player.PlayerGui end
+    return g
+end
+
+-- O SEU ESP de Drawing API modificado para Esqueleto e Caixa
+local function updateDrawingESP()
+    if not drawingSupported then return end
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Character then
+            local char = plr.Character
+            local head = char:FindFirstChild("Head")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChild("Humanoid")
+            
+            if head and hrp and hum and hum.Health > 0 and espEnabled then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                if onScreen then
+                    if not ESPS[plr] then
+                        -- Cria os desenhos pro jogador
+                        ESPS[plr] = {
+                            box = newDrawing("Square"),
+                            name = newDrawing("Text"),
+                            tracer = newDrawing("Line"),
+                            skel = {}
+                        }
+                        for i=1, 6 do ESPS[plr].skel[i] = newDrawing("Line") end
+                        
+                        -- Configurações visuais
+                        if ESPS[plr].box then
+                            ESPS[plr].box.Thickness = 1
+                            ESPS[plr].box.Color = espColor
+                            ESPS[plr].box.Filled = false
+                        end
+                        if ESPS[plr].name then
+                            ESPS[plr].name.Size = 14
+                            ESPS[plr].name.Center = true
+                            ESPS[plr].name.Outline = true
+                            ESPS[plr].name.Color = COLOR_TEXT
+                        end
+                        if ESPS[plr].tracer then
+                            ESPS[plr].tracer.Thickness = 1
+                            ESPS[plr].tracer.Color = espColor
+                        end
+                        for i=1, 6 do
+                            if ESPS[plr].skel[i] then
+                                ESPS[plr].skel[i].Thickness = 1
+                                ESPS[plr].skel[i].Color = Color3.fromRGB(255, 165, 0) -- Laranja
+                            end
+                        end
+                    end
+                    
+                    -- Atualiza posições (Lógica baseada na distância)
+                    local tbl = ESPS[plr]
+                    local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+                    local h = math.clamp(2500 / dist, 40, 300)
+                    local w = h / 2
+                    
+                    if tbl.box then
+                        tbl.box.Visible = true
+                        tbl.box.Size = Vector2.new(w, h)
+                        tbl.box.Position = Vector2.new(screenPos.X - w/2, screenPos.Y - h/2)
+                    end
+                    
+                    if tbl.name then
+                        tbl.name.Visible = true
+                        tbl.name.Text = plr.Name .. " [" .. math.floor(dist) .. "m]"
+                        tbl.name.Position = Vector2.new(screenPos.X, screenPos.Y - h/2 - 15)
+                    end
+                    
+                    if tbl.tracer then
+                        tbl.tracer.Visible = true
+                        tbl.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        tbl.tracer.To = Vector2.new(screenPos.X, screenPos.Y + h/2)
+                    end
+                    
+                    -- Lógica do Esqueleto
+                    local parts = {
+                        head = head,
+                        ut = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"),
+                        lt = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso"),
+                        la = char:FindFirstChild("LeftUpperArm") or char:FindFirstChild("Left Arm"),
+                        ra = char:FindFirstChild("RightUpperArm") or char:FindFirstChild("Right Arm"),
+                        ll = char:FindFirstChild("LeftUpperLeg") or char:FindFirstChild("Left Leg"),
+                        rl = char:FindFirstChild("RightUpperLeg") or char:FindFirstChild("Right Leg")
+                    }
+                    
+                    local function getP(p)
+                        if p then local sp, os = Camera:WorldToViewportPoint(p.Position); if os then return Vector2.new(sp.X, sp.Y) end end
+                        return nil
+                    end
+                    
+                    local hP, utP, ltP, laP, raP, llP, rlP = getP(parts.head), getP(parts.ut), getP(parts.lt), getP(parts.la), getP(parts.ra), getP(parts.ll), getP(parts.rl)
+                    
+                    if hP and utP then tbl.skel[1].From = hP; tbl.skel[1].To = utP; tbl.skel[1].Visible = true else tbl.skel[1].Visible = false end
+                    if utP and ltP then tbl.skel[2].From = utP; tbl.skel[2].To = ltP; tbl.skel[2].Visible = true else tbl.skel[2].Visible = false end
+                    if utP and laP then tbl.skel[3].From = utP; tbl.skel[3].To = laP; tbl.skel[3].Visible = true else tbl.skel[3].Visible = false end
+                    if utP and raP then tbl.skel[4].From = utP; tbl.skel[4].To = raP; tbl.skel[4].Visible = true else tbl.skel[4].Visible = false end
+                    if ltP and llP then tbl.skel[5].From = ltP; tbl.skel[5].To = llP; tbl.skel[5].Visible = true else tbl.skel[5].Visible = false end
+                    if ltP and rlP then tbl.skel[6].From = ltP; tbl.skel[6].To = rlP; tbl.skel[6].Visible = true else tbl.skel[6].Visible = false end
+
+                else
+                    -- Jogador na tela? Esconde tudo
+                    if ESPS[plr] then
+                        if ESPS[plr].box then ESPS[plr].box.Visible = false end
+                        if ESPS[plr].name then ESPS[plr].name.Visible = false end
+                        if ESPS[plr].tracer then ESPS[plr].tracer.Visible = false end
+                        for i=1, 6 do if ESPS[plr].skel[i] then ESPS[plr].skel[i].Visible = false end end
+                    end
+                end
+            elseif ESPS[plr] then
+                -- Jogador morreu ou saiu
+                if ESPS[plr].box then ESPS[plr].box.Visible = false end
+                if ESPS[plr].name then ESPS[plr].name.Visible = false end
+                if ESPS[plr].tracer then ESPS[plr].tracer.Visible = false end
+                for i=1, 6 do if ESPS[plr].skel[i] then ESPS[plr].skel[i].Visible = false end end
+            end
+        end
+    end
+end
+
+-- ===========================
+-- CRIAÇÃO DA UI (O SEU MENU VISUAL)
+-- ===========================
+local MainGui = Instance.new("ScreenGui")
+MainGui.Name = "StoppedMenu_Original_Modified"
+MainGui.ResetOnSpawn = false
+MainGui.Parent = Player:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 300, 0, 250)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -125)
+MainFrame.BackgroundColor3 = COLOR_PANEL
+MainFrame.Parent = MainGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BackgroundColor3 = COLOR_BG
+TitleBar.Parent = MainFrame
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1, 0, 1, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "STOPPED | RED ESP & TP"
+TitleText.TextColor3 = COLOR_ACCENT
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextSize = 14
+TitleText.Parent = TitleBar
+
+-- Botão ESP
+local ESPBtn = Instance.new("TextButton")
+ESPBtn.Size = UDim2.new(0.9, 0, 0, 40)
+ESPBtn.Position = UDim2.new(0.05, 0, 0, 50)
+ESPBtn.BackgroundColor3 = COLOR_ACCENT
+ESPBtn.TextColor3 = COLOR_TEXT
+ESPBtn.Font = Enum.Font.Gotham
+ESPBtn.Text = "ESP GERAL: LIGADO"
+ESPBtn.Parent = MainFrame
+Instance.new("UICorner", ESPBtn).CornerRadius = UDim.new(0, 6)
+
+-- Dropdown de Teleport
+local TPFrame = Instance.new("Frame")
+TPFrame.Size = UDim2.new(0.9, 0, 0, 80)
+TPFrame.Position = UDim2.new(0.05, 0, 0, 100)
+TPFrame.BackgroundColor3 = COLOR_BG
+TPFrame.Parent = MainFrame
+Instance.new("UICorner", TPFrame).CornerRadius = UDim.new(0, 6)
+
+local TPLabel = Instance.new("TextLabel")
+TPLabel.Size = UDim2.new(1, 0, 0, 25)
+TPLabel.BackgroundTransparency = 1
+TPLabel.Text = "Teleportar para Jogador:"
+TPLabel.TextColor3 = COLOR_TEXT
+TPLabel.Font = Enum.Font.Gotham
+TPLabel.TextSize = 14
+TPLabel.Parent = TPFrame
+
+local TPButton = Instance.new("TextButton")
+TPButton.Size = UDim2.new(1, -10, 0, 35)
+TPButton.Position = UDim2.new(0, 5, 0, 30)
+TPButton.BackgroundColor3 = COLOR_ACCENT
+TPButton.TextColor3 = COLOR_TEXT
+TPButton.Font = Enum.Font.GothamBold
+TPButton.Text = "Alvo: Selecionar Jogador"
+TPButton.Parent = TPFrame
+Instance.new("UICorner", TPButton).CornerRadius = UDim.new(0, 6)
+
+-- Lógica do Menu
+ESPBtn.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    ESPBtn.Text = "ESP GERAL: " .. (espEnabled and "LIGADO" or "DESLIGADO")
+    ESPBtn.BackgroundColor3 = espEnabled and COLOR_ACCENT or COLOR_TAB
+end)
+
+-- Lógica do Dropdown de TP
+local currentTargetIndex = 1
+TPButton.MouseButton1Click:Connect(function()
+    local plrs = {}
+    for _, p in pairs(Players:GetPlayers()) do if p ~= Player then table.insert(plrs, p) end end
+    if #plrs > 0 then
+        currentTargetIndex = currentTargetIndex + 1
+        if currentTargetIndex > #plrs then currentTargetIndex = 1 end
+        local target = plrs[currentTargetIndex]
+        TPButton.Text = "Alvo: " .. target.Name
+        
+        -- Executa o Teleport
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            Player.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 0, 3)
+        end
+    else
+        TPButton.Text = "Ninguém no servidor"
+    end
+end)
+
+-- Conecta o loop
+RunService.RenderStepped:Connect(updateDrawingESP)
